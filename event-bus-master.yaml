@@ -1,0 +1,89 @@
+Parameters:
+  OrganizationId:
+    Description: The Id of the organization
+    Type: String
+
+Resources:
+  Policy:
+    Type: AWS::Events::EventBusPolicy
+    Properties:
+      Action: "events:PutEvents"
+      Principal: "*"
+      StatementId: OrganizationAccess
+      Condition:
+        Type: StringEquals
+        Key: "aws:PrincipalOrgID"
+        Value: !Ref OrganizationId
+
+  EventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source:
+          - josharmi.hostedzoneevent
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt EventFunction.Arn
+          Id: HostedZoneFunction
+
+  PermissionForEventsToInvokeLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref EventFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt EventRule.Arn
+
+  EventFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import boto3
+          import os
+
+          def handler(event, context):
+              print(event)
+              vpc_id = os.environ['VPCID']
+              region = os.environ['REGION']
+              hosted_zone_id = event['detail']['HostedZoneId']
+              route53 = boto3.Session().client('route53')
+              route53.associate_vpc_with_hosted_zone(
+                  HostedZoneId=hosted_zone_id,
+                  VPC={
+                      'VPCRegion': region,
+                      'VPCId': vpc_id
+                  }
+              )
+      Environment:
+        Variables:
+          VPCID: !ImportValue DNSVPCId
+          REGION: !Sub ${AWS::Region}
+      Handler: index.handler
+      Role: !GetAtt LambdaRole.Arn
+      Runtime: python3.7
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: "root"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "route53:AssociateVPCWithHostedZone"
+                  - "ec2:DescribeVpcs"
+                Resource: "*"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Path: "/"

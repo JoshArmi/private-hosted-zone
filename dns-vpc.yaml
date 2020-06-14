@@ -1,0 +1,152 @@
+Parameters:
+  IPAddr1:
+    Description: First IP Address for Inbound Resolver
+    Type: String
+    Default: 10.0.0.10
+  IPAddr2:
+    Description: Second IP Address for Inbound Resolver
+    Type: String
+    Default: 10.0.0.11
+  CidrRange:
+    Description: CidrRange for VPC
+    Type: String
+    Default: 10.0.0.0/24
+  OrganizationArn:
+    Description: Arn of the Organization to share within arn:aws:organizations::{master-account-id}:organization/{organization-id}
+    Type: String
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref CidrRange
+      EnableDnsHostnames: True
+      EnableDnsSupport: True
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties: {}
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  Subnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: eu-west-1a
+      VpcId: !Ref VPC
+      CidrBlock: !Ref CidrRange
+
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref Subnet
+
+  InternetRoute:
+    Type: AWS::EC2::Route
+    Properties:
+       RouteTableId: !Ref RouteTable
+       DestinationCidrBlock: 0.0.0.0/0
+       GatewayId: !Ref InternetGateway
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: dns-sg
+      GroupDescription: Allows DNS in the private range
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - CidrIp: !Ref CidrRange
+          IpProtocol: tcp
+          FromPort: 53
+          ToPort: 53
+        - CidrIp: !Ref CidrRange
+          IpProtocol: udp
+          FromPort: 53
+          ToPort: 53
+      SecurityGroupEgress:
+        - CidrIp: !Ref CidrRange
+          IpProtocol: tcp
+          FromPort: 53
+          ToPort: 53
+        - CidrIp: !Ref CidrRange
+          IpProtocol: udp
+          FromPort: 53
+          ToPort: 53
+
+  InboundEndpoint:
+    Type: AWS::Route53Resolver::ResolverEndpoint
+    Properties:
+      Direction: INBOUND
+      IpAddresses:
+        - SubnetId: !Ref Subnet
+          Ip: !Ref IPAddr1
+        - SubnetId: !Ref Subnet
+          Ip: !Ref IPAddr2
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+
+  OutboundEndpoint:
+    Type: AWS::Route53Resolver::ResolverEndpoint
+    Properties:
+      Direction: OUTBOUND
+      IpAddresses:
+        - SubnetId: !Ref Subnet
+        - SubnetId: !Ref Subnet
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+
+  ResolverRule:
+    Type: AWS::Route53Resolver::ResolverRule
+    Properties:
+      DomainName: cloud.private
+      RuleType: FORWARD
+      ResolverEndpointId: !Ref OutboundEndpoint
+      TargetIps:
+        - Ip: !Ref IPAddr1
+          Port: 53
+        - Ip: !Ref IPAddr2
+          Port: 53
+
+  RuleAssociation:
+    Type: AWS::Route53Resolver::ResolverRuleAssociation
+    Properties:
+      ResolverRuleId: !Ref ResolverRule
+      VPCId: !Ref VPC
+
+  HostedZone:
+    Type: "AWS::Route53::HostedZone"
+    Properties:
+      Name: cloud.private
+      VPCs:
+        - VPCId: !Ref VPC
+          VPCRegion: !Sub ${AWS::Region}
+
+  RuleShare:
+    Type: AWS::RAM::ResourceShare
+    Properties:
+      AllowExternalPrincipals: True
+      Name: ResolverRuleShare
+      Principals:
+        - !Ref OrganizationArn
+      ResourceArns:
+        - !GetAtt ResolverRule.Arn
+
+Outputs:
+  ResolverRuleId:
+    Description: ID of the Resolver Rule
+    Value: !Ref ResolverRule
+  VpcId:
+    Description: VPC Id
+    Value: !Ref VPC
+    Export:
+      Name: DNSVPCId

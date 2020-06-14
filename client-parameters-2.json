@@ -1,0 +1,26 @@
+[
+    {
+        "ParameterKey": "ResolverRuleId",
+        "ParameterValue": "rslvr-rr-f2e704c5b6594be4b"
+    },
+    {
+        "ParameterKey": "MasterAccountId",
+        "ParameterValue": "111122223333"
+    },
+    {
+        "ParameterKey": "DNSVPCId",
+        "ParameterValue": "vpc-0d888c2a81dcf88fa"
+    },
+    {
+        "ParameterKey": "IpAddr",
+        "ParameterValue": "10.0.2.10"
+    },
+    {
+        "ParameterKey": "CidrRange",
+        "ParameterValue": "10.0.2.0/24"
+    },
+    {
+        "ParameterKey": "Subdomain",
+        "ParameterValue": "gamma"
+    }
+]
